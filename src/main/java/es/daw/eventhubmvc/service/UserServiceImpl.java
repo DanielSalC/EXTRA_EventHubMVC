@@ -7,6 +7,7 @@ import es.daw.eventhubmvc.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 //@Transactional // en observación????
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Service;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+
+    @Transactional(readOnly = true)   // optimiza lecturas
     @Override
     public User findByUsername(String username) {
         return userRepository.findByUsername(username)
@@ -22,6 +25,7 @@ public class UserServiceImpl implements UserService {
                 );
     }
 
+    @Transactional                    // necesita transacción completa
     @Override
     public User updateProfile(Long userId, UserProfileUpdateRequest request) {
 
