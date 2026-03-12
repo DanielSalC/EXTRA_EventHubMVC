@@ -2,6 +2,7 @@ package es.daw.eventhubmvc.controller;
 
 import es.daw.eventhubmvc.dto.cart.AddToCartForm;
 import es.daw.eventhubmvc.entity.Purchase;
+import es.daw.eventhubmvc.enums.TicketCategory;
 import es.daw.eventhubmvc.model.Cart;
 import es.daw.eventhubmvc.model.CartItem;
 import es.daw.eventhubmvc.service.CatalogClientService;
@@ -9,6 +10,7 @@ import es.daw.eventhubmvc.service.PurchaseService;
 import es.daw.eventhubmvc.dto.ticket.TicketTypeDTO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.MessageSource;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -17,6 +19,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
 
 @Controller
 @RequiredArgsConstructor
@@ -25,6 +28,7 @@ public class CartController {
     private final Cart cart;
     private final CatalogClientService catalogClientService;
     private final PurchaseService purchaseService;
+    private final MessageSource messageSource;
 
     @GetMapping("/cart")
     public String view(Model model) {
@@ -36,7 +40,8 @@ public class CartController {
     @PostMapping("/cart/add")
     public String add(
             @Valid @ModelAttribute("addToCart") AddToCartForm form,
-            RedirectAttributes ra
+            RedirectAttributes ra,
+            Locale locale
     ) {
         // 1. En form tenemos los valores de los parámetros del post
         // 2. Ejecuta Bean Validation (@NotBlank,@Min(1)....
@@ -79,27 +84,75 @@ public class CartController {
                 ? ticketType.basePrice()
                 : BigDecimal.ZERO;
 
-        // PENDIENTE JUEVES 12 MARZO
-        // Antes de añadir el item al carrito:
-        // - Obtengo el número total de items del ticket code en cuestión (por ejemplo 2 tickets VIP)
-        // - Compruebo si la suma de la cantidad que quiero comprar: 3 + 2 (ya tengo) > límite (categoría VIP)
-        // - Si es mayor: mensajito de que te has pasado torpedo!!!
+        // ---------------------------------------------
+        int max = ticketType.category().getMaxPerPurchase(); // si es VIP da 4, si es STUDENT da 2
+        // cuańtos tickets hay en el carrito con
+        int currentQty = cart.getQty(ticketType.code()); // cantidad que existe previamente en el carrito
+        int qty = form.qty(); // cantidad que quiero comprar
+        int resultingQty = qty + currentQty;
 
-        CartItem item = new CartItem(
-                ticketType.code(),
-                ticketType.category().name(),
-                unitPrice,
-                form.qty()
-        );
+        if (resultingQty > max) {
+            // no permitimos. Ha sobrepaso el máximo de tickets permitidos de ese tipo
+            String msg = messageSource.getMessage("cart.error.maxTickets",
+                    new Object[]{max, ticketType.category().getLabel(),currentQty},
+                    locale);
+            ra.addFlashAttribute("errorMessage",msg);
+            return "redirect:/events/"+form.eventCode();
+        }
 
-        // Carrito: tenemos métodos simples, sin lógica de negocio. Métodos de compartamiento...
+        // -----------------------
+        // Cuantos tickets de la categoría VIP hay en el carrito...
+        int vipAlreadyInCart = cart.getQtyByCategory(TicketCategory.VIP); // nuevo método en Cart
+
+        // Regla de descuento. Solo se aplica a tipo VIP
+        // Tipo VIP tiene una máximo de 4 (puedo comprar en total como máximo 4
+        // Si el ticket que añades es VIP y ya tienes casi el máximo permitido (max-1 o más), a los “nuevos VIP” les aplicas 10%.
+        //
+        boolean applyDiscount =
+                ticketType.category() == TicketCategory.VIP
+                && vipAlreadyInCart >= (ticketType.category().getMaxPerPurchase() - 1);
+
+        CartItem item;
+
+        if (applyDiscount) {
+            // aplico un 10% de descuento. Opciones:
+            // 1. precio orginal - 10% = precio final
+            // 2. precio original * 0,90 = 90% del precio.
+            BigDecimal discountedPrice =
+                    unitPrice.multiply(BigDecimal.valueOf(0.9));
+
+            item = new CartItem(
+                    ticketType.code() + "_DISCOUNTED",
+                    ticketType.category().name(),
+                    discountedPrice,
+                    form.qty()
+            );
+
+            // pendiente i18n
+            ra.addFlashAttribute("successMessage","10% discount applied to he new VIP tickets");
+
+        }else{
+            // ------------------------------
+            item = new CartItem(
+                    ticketType.code(),
+                    ticketType.category().name(),
+                    unitPrice,
+                    form.qty()
+            );
+
+            // ---------------------
+            // -- i18n
+            ra.addFlashAttribute("successMessage", messageSource.getMessage("cart.success.added", new Object[]{form.qty()}, locale));
+            // ---------------------
+
+        }
+
         cart.addOrIncrement(item);
 
-        // ---------------------
-        ra.addFlashAttribute("successMessage", "Added " + form.qty() + " ticket(s) to your cart.");
-        // ---------------------
-
         return "redirect:/events/" + form.eventCode();
+
+
+
     }
 
     @PostMapping("/cart/update")

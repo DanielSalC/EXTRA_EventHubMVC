@@ -1,5 +1,6 @@
 package es.daw.eventhubmvc.model;
 
+import es.daw.eventhubmvc.enums.TicketCategory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.annotation.SessionScope;
 
@@ -59,6 +60,43 @@ public class Cart {
 
     public void remove(String ticketTypeCode) {
         items.remove(ticketTypeCode);
+    }
+
+
+    // ---- MÉTODOS NUEVOS DE COMPORTAMIENTO -----
+
+    /**
+     * Devuelve la cantidad de tickets comprados
+     * Ya había X unidades del ticketTypeCode en el carrito, independientemente de la categoría
+     * @param ticketTypeCode código del ticket (es único)
+     * @return
+     */
+    public int getQty(String ticketTypeCode){
+        CartItem existing = items.get(ticketTypeCode);
+        return existing != null ? existing.qty() : 0;
+
+    }
+
+    /**
+     * Cantidad de tickets de una categoría concreta ...
+     * @param category
+     * @return
+     */
+    public int getQtyByCategory(TicketCategory category) {
+        return items.values().stream()
+                .filter(i -> i.ticketName().equals(category.name()))
+                .mapToInt(CartItem::qty)
+                .sum();
+    }
+    public int getQtyByCategoryIterative(TicketCategory category) {
+        int total = 0;
+        if (category == null) return 0;
+        for (CartItem item : items.values()) {
+            if (item != null && category.name().equals(item.ticketName())) {
+                total += item.qty();
+            }
+        }
+        return total;
     }
 
 
